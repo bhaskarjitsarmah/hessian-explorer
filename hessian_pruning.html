@@ -643,6 +643,7 @@
   <button class="tab-btn" id="tabBtn4" onclick="switchTab(4)">⑤ Quantization</button>
   <button class="tab-btn" id="tabBtn5" onclick="switchTab(5)">⑥ Knowledge Distillation</button>
   <button class="tab-btn" id="tabBtn6" onclick="switchTab(6)">⑦ KV-Cache</button>
+  <button class="tab-btn" id="tabBtn7" onclick="switchTab(7)">⑧ Speculative Decoding</button>
 </div>
 
 <!-- TAB 1 -->
@@ -1878,6 +1879,127 @@
   </div>
 </div><!-- end tab7 -->
 
+<!-- ===== TAB 8: SPECULATIVE DECODING ===== -->
+<div class="tab-pane" id="tab8">
+  <div style="max-width:1100px;margin:0 auto;padding:18px 12px;">
+
+    <!-- Hero -->
+    <div class="card" style="background:linear-gradient(135deg,#0d1117 60%,#1a2a1a);border-color:#7ee78744;">
+      <div class="card-title" style="color:#7ee787;">Speculative Decoding</div>
+      <p style="font-size:0.85rem;color:#8b949e;max-width:820px;">
+        LLMs generate tokens <b style="color:#c9d1d9;">one at a time</b> — each requires a full forward pass through the large model.
+        Speculative decoding breaks this serial bottleneck: a cheap <b style="color:#4a9eff;">draft model</b> sketches
+        <em>γ</em> tokens ahead, then the large <b style="color:#ff9f43;">target model</b> verifies all γ in <b style="color:#c9d1d9;">one parallel pass</b>.
+        Accepted tokens are kept; rejected ones are resampled. No quality loss — provably same output distribution.
+        Typical speedup: <b style="color:#7ee787;">2–4×</b>.
+      </p>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:10px;">
+        <div style="background:#111;border:1px solid #4a9eff44;border-radius:8px;padding:10px 16px;font-size:0.8rem;">
+          <div style="color:#4a9eff;font-weight:700;">Draft model</div>
+          <div style="color:#8b949e;">Small, fast (e.g. 7B)</div>
+          <div style="color:#8b949e;">~10% cost of target</div>
+        </div>
+        <div style="background:#111;border:1px solid #ff9f4344;border-radius:8px;padding:10px 16px;font-size:0.8rem;">
+          <div style="color:#ff9f43;font-weight:700;">Target model</div>
+          <div style="color:#8b949e;">Large, accurate (e.g. 70B)</div>
+          <div style="color:#8b949e;">Verifies γ tokens in 1 call</div>
+        </div>
+        <div style="background:#111;border:1px solid #7ee78744;border-radius:8px;padding:10px 16px;font-size:0.8rem;">
+          <div style="color:#7ee787;font-weight:700;">Result</div>
+          <div style="color:#8b949e;">Identical output distribution</div>
+          <div style="color:#8b949e;">2–4× throughput gain</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 1: Live Demo -->
+    <div class="card">
+      <div class="card-title">① Watch It Live — Step Through Speculative Decoding</div>
+      <p style="font-size:0.82rem;color:#8b949e;margin-bottom:12px;">
+        The draft model generates <b style="color:#4a9eff;">γ = 4</b> tokens speculatively.
+        The target model then verifies all 4 in one pass.
+        Accepted tokens are added to context; the first rejected token triggers a resample.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+        <button class="btn btn-purple" onclick="sdNext()">▶ Next Step</button>
+        <button class="btn" id="sd-auto-btn" onclick="sdToggleAuto()" style="color:#4a9eff;border-color:#4a9eff44;">▶ Auto Play</button>
+        <button class="btn" onclick="sdReset()" style="color:#aaa;">↺ Reset</button>
+      </div>
+      <canvas id="sd-canvas" width="980" height="370" style="display:block;border-radius:8px;background:#0d1117;width:100%;"></canvas>
+      <div id="sd-caption" style="font-size:0.78rem;color:#8b949e;margin-top:8px;min-height:32px;padding:6px 10px;background:#111;border-radius:6px;border:1px solid #21262d;">
+        Press "Next Step" to begin generating tokens.
+      </div>
+    </div>
+
+    <!-- SECTION 2: Timing comparison -->
+    <div class="card">
+      <div class="card-title">② Why It's Faster — Timeline Comparison</div>
+      <p style="font-size:0.82rem;color:#8b949e;margin-bottom:14px;">
+        Each block below represents one model call. The draft model calls are tiny (10% cost).
+        The target verification call costs the same as one regular call — but produces up to γ tokens.
+      </p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+        <label style="font-size:0.78rem;color:#8b949e;">Draft tokens γ: <b id="sd-gamma-val" style="color:#4a9eff;">4</b><br>
+          <input type="range" id="sd-gamma-slider" min="1" max="8" value="4"
+            oninput="document.getElementById('sd-gamma-val').textContent=this.value;sdDrawTimeline()" style="width:160px;margin-top:4px;">
+        </label>
+        <label style="font-size:0.78rem;color:#8b949e;">Acceptance rate α: <b id="sd-alpha-val" style="color:#ff9f43;">0.80</b><br>
+          <input type="range" id="sd-alpha-slider" min="50" max="99" value="80"
+            oninput="document.getElementById('sd-alpha-val').textContent=(this.value/100).toFixed(2);sdDrawTimeline()" style="width:160px;margin-top:4px;">
+        </label>
+        <label style="font-size:0.78rem;color:#8b949e;">Draft/Target cost ratio c: <b id="sd-cost-val" style="color:#7c6fcd;">0.10</b><br>
+          <input type="range" id="sd-cost-slider" min="5" max="40" value="10"
+            oninput="document.getElementById('sd-cost-val').textContent=(this.value/100).toFixed(2);sdDrawTimeline()" style="width:160px;margin-top:4px;">
+        </label>
+      </div>
+      <canvas id="sd-timeline-canvas" width="980" height="230" style="display:block;border-radius:8px;background:#0d1117;width:100%;"></canvas>
+    </div>
+
+    <!-- SECTION 3: Accept/Reject Math -->
+    <div class="card">
+      <div class="card-title">③ The Accept/Reject Rule — Probability Deep Dive</div>
+      <p style="font-size:0.82rem;color:#8b949e;margin-bottom:10px;">
+        A draft token <em>x</em> is accepted if <b style="color:#c9d1d9;">u ~ Uniform(0,1) &lt; min(1, p_target(x) / p_draft(x))</b>.
+        This guarantees the output distribution matches the target — mathematically exact.
+        Click a round and position to explore the probabilities.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-bottom:4px;">Round</div>
+          <div style="display:flex;gap:6px;" id="sd-ar-round-btns">
+            <button class="btn" onclick="sdARSelect(0,sdARPos)" style="color:#4a9eff;border-color:#4a9eff;padding:4px 12px;font-size:0.75rem;">Round 1</button>
+            <button class="btn" onclick="sdARSelect(1,sdARPos)" style="color:#aaa;padding:4px 12px;font-size:0.75rem;">Round 2</button>
+            <button class="btn" onclick="sdARSelect(2,sdARPos)" style="color:#aaa;padding:4px 12px;font-size:0.75rem;">Round 3</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-bottom:4px;">Token position</div>
+          <div style="display:flex;gap:6px;" id="sd-ar-pos-btns">
+            <button class="btn" onclick="sdARSelect(sdARRound,0)" style="color:#4a9eff;border-color:#4a9eff;padding:4px 12px;font-size:0.75rem;">Pos 1</button>
+            <button class="btn" onclick="sdARSelect(sdARRound,1)" style="color:#aaa;padding:4px 12px;font-size:0.75rem;">Pos 2</button>
+            <button class="btn" onclick="sdARSelect(sdARRound,2)" style="color:#aaa;padding:4px 12px;font-size:0.75rem;">Pos 3</button>
+            <button class="btn" onclick="sdARSelect(sdARRound,3)" style="color:#aaa;padding:4px 12px;font-size:0.75rem;">Pos 4</button>
+          </div>
+        </div>
+      </div>
+      <canvas id="sd-ar-canvas" width="980" height="220" style="display:block;border-radius:8px;background:#0d1117;width:100%;"></canvas>
+    </div>
+
+    <!-- SECTION 4: Speedup Calculator -->
+    <div class="card">
+      <div class="card-title">④ Speedup Formula Calculator</div>
+      <p style="font-size:0.82rem;color:#8b949e;margin-bottom:14px;">
+        Expected speedup = <b style="color:#c9d1d9;">(1 − αᵞ⁺¹) / ((1−α) × (γ·c + 1))</b><br>
+        where α = acceptance rate, γ = draft tokens per round, c = draft/target cost ratio.
+        The chart shows speedup vs α for multiple values of γ.
+      </p>
+      <canvas id="sd-speedup-canvas" width="980" height="280" style="display:block;border-radius:8px;background:#0d1117;width:100%;"></canvas>
+      <div id="sd-speedup-formula" style="margin-top:12px;font-size:0.82rem;color:#8b949e;padding:10px 14px;background:#111;border-radius:6px;border:1px solid #21262d;"></div>
+    </div>
+
+  </div>
+</div><!-- end tab8 -->
+
 <script>
 // ============================================================
 // DATASET
@@ -2964,6 +3086,9 @@ function switchTab(idx) {
   }
   if(idx === 6) {
     kvInit();
+  }
+  if(idx === 7) {
+    sdInit();
   }
 }
 
@@ -4392,6 +4517,509 @@ Hdiag = null;
   }
 });
 
+// ============================================================
+// TAB 8: SPECULATIVE DECODING
+// ============================================================
+const SD_PROMPT_TOKS = ['The'];
+const SD_ROUNDS = [
+  { draft:[{t:'quick',dp:0.42,tp:0.45},{t:'brown',dp:0.38,tp:0.40},{t:'fox',dp:0.55,tp:0.58},{t:'jumps',dp:0.35,tp:0.32}], accepted:[true,true,true,true],  resampled:null  },
+  { draft:[{t:'over', dp:0.50,tp:0.52},{t:'the',  dp:0.65,tp:0.68},{t:'lazy',dp:0.30,tp:0.28},{t:'dog',  dp:0.40,tp:0.18}], accepted:[true,true,true,false], resampled:'cat' },
+  { draft:[{t:'while',dp:0.15,tp:0.18},{t:'the',  dp:0.65,tp:0.62},{t:'cat', dp:0.45,tp:0.48},{t:'slept',dp:0.55,tp:0.58}], accepted:[true,true,true,true],  resampled:null  }
+];
+const SD_COST_DRAFT = 0.10; // relative to target = 1.0
+
+let sdCtx = [...SD_PROMPT_TOKS];
+let sdRoundIdx = 0;
+let sdPhase = 'idle'; // idle | drafting | verifying | accepting | updating | done
+let sdDraftShown = 0;
+let sdAcceptShown = 0;
+let sdAutoId = null;
+let sdARRound = 0, sdARPos = 0;
+
+function sdInit() {
+  sdReset();
+  sdDrawTimeline();
+  sdARSelect(0, 0);
+  sdDrawSpeedupChart();
+}
+
+function sdReset() {
+  if(sdAutoId){ clearInterval(sdAutoId); sdAutoId=null; }
+  const btn = document.getElementById('sd-auto-btn');
+  if(btn){ btn.textContent='▶ Auto Play'; btn.style.color='#4a9eff'; btn.style.background=''; }
+  sdCtx = [...SD_PROMPT_TOKS];
+  sdRoundIdx = 0; sdPhase = 'idle'; sdDraftShown = 0; sdAcceptShown = 0;
+  sdDraw();
+  const cap = document.getElementById('sd-caption');
+  if(cap) cap.textContent = 'Press "Next Step" to begin generating tokens.';
+}
+
+function sdToggleAuto() {
+  if(sdAutoId){ clearInterval(sdAutoId); sdAutoId=null;
+    const btn=document.getElementById('sd-auto-btn');
+    if(btn){ btn.textContent='▶ Auto Play'; btn.style.color='#4a9eff'; btn.style.background=''; }
+  } else {
+    const btn=document.getElementById('sd-auto-btn');
+    if(btn){ btn.textContent='⏹ Stop'; btn.style.color='#fff'; btn.style.background='#f85149'; }
+    sdAutoId = setInterval(()=>{ if(sdPhase==='done'){ clearInterval(sdAutoId); sdAutoId=null; return; } sdNext(); }, 600);
+  }
+}
+
+function sdCaption(txt){ const el=document.getElementById('sd-caption'); if(el) el.textContent=txt; }
+
+function sdNext() {
+  if(sdPhase==='done'){ sdReset(); return; }
+  const round = SD_ROUNDS[sdRoundIdx < SD_ROUNDS.length ? sdRoundIdx : SD_ROUNDS.length-1];
+
+  if(sdPhase==='idle' || sdPhase==='updating') {
+    if(sdRoundIdx >= SD_ROUNDS.length){ sdPhase='done'; sdDraw(); return; }
+    sdPhase='drafting'; sdDraftShown=0; sdAcceptShown=0;
+    sdCaption(`Round ${sdRoundIdx+1} of ${SD_ROUNDS.length}: Draft model begins generating tokens speculatively...`);
+  } else if(sdPhase==='drafting') {
+    sdDraftShown++;
+    const tok = round.draft[sdDraftShown-1];
+    sdCaption(`Draft token ${sdDraftShown}: "${tok.t}" — draft assigns p = ${tok.dp.toFixed(2)}`);
+    if(sdDraftShown >= round.draft.length){ sdPhase='verifying';
+      sdCaption(`All ${round.draft.length} draft tokens ready. Target model now verifies all ${round.draft.length} in ONE parallel forward pass...`);
+    }
+  } else if(sdPhase==='verifying') {
+    sdPhase='accepting'; sdAcceptShown=0;
+    sdCaption(`Target model done. Checking each token: accept if min(1, p_target / p_draft) > U(0,1)...`);
+  } else if(sdPhase==='accepting') {
+    const tok = round.draft[sdAcceptShown];
+    const ratio = Math.min(1, tok.tp/tok.dp);
+    const acc = round.accepted[sdAcceptShown];
+    sdCaption(`"${tok.t}": p_target/p_draft = ${tok.tp.toFixed(2)}/${tok.dp.toFixed(2)} = ${(tok.tp/tok.dp).toFixed(2)} → accept prob = ${ratio.toFixed(2)} → ${acc ? '✓ ACCEPTED' : `✗ REJECTED${round.resampled ? ` — resample from adjusted distribution → "${round.resampled}"` : ''}`}`);
+    sdAcceptShown++;
+    if(sdAcceptShown >= round.draft.length) sdPhase='updating';
+  } else if(sdPhase==='updating') {
+    const firstRej = round.accepted.indexOf(false);
+    const keep = firstRej>=0 ? round.draft.slice(0,firstRej).map(d=>d.t) : round.draft.map(d=>d.t);
+    sdCtx.push(...keep);
+    if(round.resampled) sdCtx.push(round.resampled);
+    const accepted = firstRej>=0 ? firstRej : round.draft.length;
+    sdCaption(`Round ${sdRoundIdx+1} complete: kept ${accepted} draft token${accepted!==1?'s':''} + ${round.resampled?'1 resampled token':''} = ${accepted+(round.resampled?1:0)} new tokens from 1 target model call.`);
+    sdRoundIdx++;
+    sdPhase = sdRoundIdx >= SD_ROUNDS.length ? 'done' : 'idle';
+    sdDraw(); return;
+  }
+  sdDraw();
+}
+
+function sdDraw() {
+  const c = document.getElementById('sd-canvas'); if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,W,H);
+
+  const TW=68, TH=30, TG=6;
+  const LABEL_W=86, DATA_X=LABEL_W+8;
+
+  // ---- Helper: draw token box ----
+  function tokenBox(x,y,label,fillC,strokeC,textC,badge,badgeC,subLabel,subC) {
+    ctx.fillStyle=fillC; ctx.strokeStyle=strokeC; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.roundRect(x,y,TW,TH,4); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=textC; ctx.font='bold 11px system-ui'; ctx.textAlign='center';
+    ctx.fillText(label, x+TW/2, y+TH/2+4);
+    if(badge){ ctx.fillStyle=badgeC; ctx.font='bold 13px system-ui'; ctx.textAlign='left'; ctx.fillText(badge,x+TW-14,y+12); }
+    if(subLabel){ ctx.fillStyle=subC||'#555'; ctx.font='8px monospace'; ctx.textAlign='center'; ctx.fillText(subLabel,x+TW/2,y+TH+11); }
+  }
+
+  // ---- ROW 1: Context ----
+  const R1Y=14;
+  ctx.fillStyle='#8b949e'; ctx.font='bold 10px system-ui'; ctx.textAlign='right';
+  ctx.fillText('Context', LABEL_W, R1Y+TH/2+4);
+  sdCtx.forEach((tok,i)=>{
+    tokenBox(DATA_X+i*(TW+TG), R1Y, tok, '#0f2a1a','#3fb950','#7ee787');
+  });
+
+  if(sdPhase==='done'){
+    ctx.fillStyle='#7ee787'; ctx.font='bold 15px system-ui'; ctx.textAlign='center';
+    ctx.fillText('✓ All rounds complete — press Reset to replay', W/2, H/2+10);
+    return;
+  }
+
+  const round = SD_ROUNDS[sdRoundIdx < SD_ROUNDS.length ? sdRoundIdx : SD_ROUNDS.length-1];
+  const R2Y = R1Y+TH+36;
+  const R3Y = R2Y+TH+52;
+
+  // ---- ROW 2: Draft model ----
+  ctx.fillStyle='#1a2e4a'; ctx.strokeStyle='#4a9eff'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(4,R2Y,LABEL_W-2,TH,4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#4a9eff'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+  ctx.fillText('DRAFT MODEL', LABEL_W/2, R2Y+TH/2-2);
+  ctx.font='8px system-ui'; ctx.fillText('small, fast', LABEL_W/2, R2Y+TH/2+9);
+
+  for(let i=0;i<round.draft.length;i++){
+    const tok=round.draft[i];
+    const shown = sdDraftShown>i || ['verifying','accepting','updating'].includes(sdPhase);
+    if(!shown){ ctx.fillStyle='#111'; ctx.strokeStyle='#21262d'; ctx.lineWidth=1; ctx.beginPath(); ctx.roundRect(DATA_X+i*(TW+TG),R2Y,TW,TH,4); ctx.fill(); ctx.stroke(); continue; }
+    const revAcc = (sdPhase==='accepting'&&sdAcceptShown>i) || sdPhase==='updating';
+    const acc = round.accepted[i];
+    const fc = !revAcc?'#1a2a3a':(acc?'#0f2a1a':'#2a0f0f');
+    const sc = !revAcc?'#4a9eff':(acc?'#3fb950':'#f85149');
+    const tc = !revAcc?'#c9d1d9':(acc?'#7ee787':'#ff6584');
+    tokenBox(DATA_X+i*(TW+TG),R2Y,tok.t,fc,sc,tc, revAcc?(acc?'✓':'✗'):null, acc?'#3fb950':'#f85149', `p_d=${tok.dp.toFixed(2)}`, '#555');
+  }
+
+  // Resampled token above first rejection
+  if(['accepting','updating'].includes(sdPhase) && round.resampled) {
+    const firstRej = round.accepted.indexOf(false);
+    if(firstRej>=0 && sdAcceptShown > firstRej) {
+      const rx = DATA_X+firstRej*(TW+TG), ry=R2Y-40;
+      ctx.fillStyle='#2a1a3a'; ctx.strokeStyle='#7c6fcd'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.roundRect(rx,ry,TW,26,4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#c9a9ff'; ctx.font='bold 10px system-ui'; ctx.textAlign='center';
+      ctx.fillText(`"${round.resampled}"`,rx+TW/2,ry+15);
+      ctx.fillStyle='#7c6fcd'; ctx.font='8px system-ui'; ctx.textAlign='center';
+      ctx.fillText('↑ resampled',rx+TW/2,ry-5);
+      // arrow from rejected box up
+      ctx.strokeStyle='#7c6fcd88'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(rx+TW/2,R2Y); ctx.lineTo(rx+TW/2,ry+26); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  // ---- Divider arrow label ----
+  const midY = R2Y+TH+20;
+  if(['verifying','accepting','updating'].includes(sdPhase)) {
+    const bx1=DATA_X-4, bx2=DATA_X+round.draft.length*(TW+TG)-TG+4;
+    ctx.strokeStyle='#ff9f4344'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(bx1,midY); ctx.lineTo(bx2,midY); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#ff9f4388'; ctx.font='italic 9px system-ui'; ctx.textAlign='center';
+    ctx.fillText('target verifies ALL in one parallel forward pass ↓', (bx1+bx2)/2, midY+11);
+  }
+
+  // ---- ROW 3: Target model ----
+  ctx.fillStyle='#2a1e0f'; ctx.strokeStyle='#ff9f43'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(4,R3Y,LABEL_W-2,TH,4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#ff9f43'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+  ctx.fillText('TARGET MODEL', LABEL_W/2, R3Y+TH/2-2);
+  ctx.font='8px system-ui'; ctx.fillText('large, accurate', LABEL_W/2, R3Y+TH/2+9);
+
+  const showTarget = ['verifying','accepting','updating'].includes(sdPhase);
+  for(let i=0;i<round.draft.length;i++){
+    const tok=round.draft[i];
+    if(!showTarget){ ctx.fillStyle='#111'; ctx.strokeStyle='#21262d'; ctx.lineWidth=1; ctx.beginPath(); ctx.roundRect(DATA_X+i*(TW+TG),R3Y,TW,TH,4); ctx.fill(); ctx.stroke(); continue; }
+    const revAcc = (sdPhase==='accepting'&&sdAcceptShown>i)||sdPhase==='updating';
+    const acc=round.accepted[i];
+    const fc = !revAcc?'#1e1a0f':(acc?'#0f2a1a':'#2a0f0f');
+    const sc = !revAcc?'#ff9f43':(acc?'#3fb950':'#f85149');
+    const tc = !revAcc?'#ffa657':(acc?'#7ee787':'#ff6584');
+    const ratio = Math.min(1,tok.tp/tok.dp);
+    const subLab = revAcc ? `α=${ratio.toFixed(2)}` : `p_t=${tok.tp.toFixed(2)}`;
+    tokenBox(DATA_X+i*(TW+TG),R3Y,tok.t,fc,sc,tc, revAcc?(acc?'✓':'✗'):null, acc?'#3fb950':'#f85149', subLab, revAcc?(acc?'#3fb950':'#f85149'):'#555');
+  }
+  if(showTarget){
+    const bx1=DATA_X-4, bx2=DATA_X+round.draft.length*(TW+TG)-TG+4, by=R3Y+TH+16;
+    ctx.strokeStyle='#ff9f4344'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(bx1,by-4); ctx.lineTo(bx1,by); ctx.lineTo(bx2,by); ctx.lineTo(bx2,by-4); ctx.stroke();
+    ctx.fillStyle='#ff9f43'; ctx.font='italic 9px system-ui'; ctx.textAlign='center';
+    ctx.fillText(`1 target call = up to ${round.draft.length} tokens`,(bx1+bx2)/2,by+12);
+  }
+
+  // ---- Stats panel (right side) ----
+  const firstRejAll = round.accepted.indexOf(false);
+  const tokThisRound = sdPhase==='done'||(sdPhase==='idle'&&sdRoundIdx>0) ? (firstRejAll>=0?firstRejAll:round.draft.length)+(round.resampled?1:0) : 0;
+  const totalTok = sdCtx.length - SD_PROMPT_TOKS.length;
+  const targetCalls = sdRoundIdx + (['verifying','accepting','updating'].includes(sdPhase)?1:0);
+  const timeSD = targetCalls + sdRoundIdx * round.draft.length * SD_COST_DRAFT;
+  const timeSlow = totalTok > 0 ? totalTok : 1;
+  const speedup = targetCalls>0 ? (timeSlow / timeSD).toFixed(2) : '—';
+
+  const SX = DATA_X + round.draft.length*(TW+TG) + 24;
+  const SW = W - SX - 10;
+  const stats=[
+    {l:'Tokens generated',v:`${totalTok}`,c:'#7ee787'},
+    {l:'Target model calls',v:`${targetCalls}`,c:'#ff9f43'},
+    {l:'Speedup so far',v:`${speedup}×`,c:'#c9a9ff'},
+    {l:'Round',v:`${Math.min(sdRoundIdx+1,SD_ROUNDS.length)} / ${SD_ROUNDS.length}`,c:'#4a9eff'},
+  ];
+  stats.forEach((s,i)=>{
+    const by=R1Y+i*60;
+    ctx.fillStyle='#111'; ctx.strokeStyle=s.c+'44'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(SX,by,SW,50,6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='9px system-ui'; ctx.textAlign='left';
+    ctx.fillText(s.l,SX+8,by+15);
+    ctx.fillStyle=s.c; ctx.font='bold 18px system-ui'; ctx.textAlign='left';
+    ctx.fillText(s.v,SX+8,by+38);
+  });
+}
+
+// ---- Timeline comparison ----
+function sdDrawTimeline() {
+  const c = document.getElementById('sd-timeline-canvas'); if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,W,H);
+
+  const γ = parseInt(document.getElementById('sd-gamma-slider').value);
+  const α = parseInt(document.getElementById('sd-alpha-slider').value)/100;
+  const c_ = parseInt(document.getElementById('sd-cost-slider').value)/100;
+
+  // Without SD: N tokens from target, each costs 1.0T
+  // With SD: rounds of [γ draft calls (c each) + 1 target call], producing E[tokens] per round
+  // E[tokens per round] = (1-α^(γ+1))/(1-α)  — standard result
+  const N = 12; // tokens to generate
+  const ePer = (1 - Math.pow(α,γ+1))/(1-α);
+  const rounds = Math.ceil(N / ePer);
+  const timeSD = rounds * (γ*c_ + 1.0);
+  const timeSlow = N * 1.0;
+  const speedupVal = timeSlow / timeSD;
+
+  // Draw two timeline rows
+  const ROW_H = 42, ROW_PAD = 30;
+  const LBL_W = 160;
+  const AVAIL = W - LBL_W - 20;
+  const scale = AVAIL / (N + 2); // pixels per unit time T
+
+  // Row 1: Without SD
+  const R1Y = 40;
+  ctx.fillStyle='#8b949e'; ctx.font='bold 10px system-ui'; ctx.textAlign='right';
+  ctx.fillText('Without SD', LBL_W-8, R1Y+ROW_H/2+4);
+  let xOff = LBL_W;
+  for(let i=0;i<N;i++){
+    const bw = scale * 1.0 - 2;
+    ctx.fillStyle='#2a1e0f'; ctx.strokeStyle='#ff9f43'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(xOff, R1Y, bw, ROW_H, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#ff9f43'; ctx.font='8px system-ui'; ctx.textAlign='center';
+    ctx.fillText(`T${i+1}`, xOff+bw/2, R1Y+ROW_H/2+3);
+    xOff += scale * 1.0;
+  }
+  // time label
+  ctx.fillStyle='#8b949e'; ctx.font='9px system-ui'; ctx.textAlign='left';
+  ctx.fillText(`Total: ${N}T`, LBL_W + N*scale + 4, R1Y+ROW_H/2+4);
+
+  // Row 2: With SD
+  const R2Y = R1Y + ROW_H + ROW_PAD;
+  ctx.fillStyle='#8b949e'; ctx.font='bold 10px system-ui'; ctx.textAlign='right';
+  ctx.fillText(`With SD (γ=${γ})`, LBL_W-8, R2Y+ROW_H/2+4);
+  xOff = LBL_W;
+  let toksGen = 0;
+  for(let r=0; r<rounds && toksGen<N; r++){
+    // draft blocks
+    for(let d=0;d<γ;d++){
+      const bw=scale*c_-1;
+      ctx.fillStyle='#1a2e4a'; ctx.strokeStyle='#4a9eff'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.roundRect(xOff,R2Y,bw,ROW_H,3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#4a9eff88'; ctx.font='7px system-ui'; ctx.textAlign='center';
+      ctx.fillText('d',xOff+bw/2,R2Y+ROW_H/2+3);
+      xOff += scale*c_;
+    }
+    // target verify block
+    const bw=scale*1.0-2;
+    ctx.fillStyle='#2a1e0f'; ctx.strokeStyle='#ff9f43'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.roundRect(xOff,R2Y,bw,ROW_H,3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#ff9f43'; ctx.font='8px system-ui'; ctx.textAlign='center';
+    ctx.fillText('VERIFY', xOff+bw/2, R2Y+ROW_H/2-2);
+    const tokThis = Math.min(γ, N-toksGen);
+    ctx.font='7px system-ui';
+    ctx.fillText(`≈${tokThis} tok`, xOff+bw/2, R2Y+ROW_H/2+9);
+    xOff += scale*1.0;
+    toksGen += Math.round(ePer);
+  }
+  const sdTime = rounds*(γ*c_+1.0);
+  ctx.fillStyle='#8b949e'; ctx.font='9px system-ui'; ctx.textAlign='left';
+  ctx.fillText(`Total: ${sdTime.toFixed(1)}T`, xOff+4, R2Y+ROW_H/2+4);
+
+  // Speedup callout
+  const spBg = speedupVal >= 2 ? '#0f2a1a' : '#2a1a0f';
+  const spBorder = speedupVal >= 2 ? '#238636' : '#ff9f43';
+  const spColor = speedupVal >= 2 ? '#7ee787' : '#ff9f43';
+  ctx.fillStyle=spBg; ctx.strokeStyle=spBorder; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect(W-170, R1Y, 158, ROW_H*2+ROW_PAD, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=spColor; ctx.font='bold 28px system-ui'; ctx.textAlign='center';
+  ctx.fillText(`${speedupVal.toFixed(2)}×`, W-170+79, R1Y+ROW_H+8);
+  ctx.fillStyle='#8b949e'; ctx.font='10px system-ui'; ctx.textAlign='center';
+  ctx.fillText('speedup', W-170+79, R1Y+ROW_H+26);
+
+  // Legend
+  const ly = H-18;
+  [[`▪ Draft call (cost=${c_}T)`,'#4a9eff'],[`▪ Target verify call (cost=1T)`,'#ff9f43']].forEach(([l,col],i)=>{
+    ctx.fillStyle=col; ctx.font='10px system-ui'; ctx.textAlign='left';
+    ctx.fillText(l, LBL_W + i*250, ly);
+  });
+}
+
+// ---- Accept/Reject deep dive ----
+function sdARSelect(round, pos) {
+  sdARRound = round; sdARPos = pos;
+  // update button styles
+  ['sd-ar-round-btns','sd-ar-pos-btns'].forEach((id,isPos)=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.querySelectorAll('button').forEach((btn,i)=>{
+      const active = isPos ? i===pos : i===round;
+      btn.style.color = active ? '#4a9eff' : '#aaa';
+      btn.style.borderColor = active ? '#4a9eff' : '#30363d';
+    });
+  });
+  sdDrawAR();
+}
+
+function sdDrawAR() {
+  const c = document.getElementById('sd-ar-canvas'); if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,W,H);
+
+  const round = SD_ROUNDS[sdARRound];
+  const tok = round.draft[sdARPos];
+  const accepted = round.accepted[sdARPos];
+  const ratio = tok.tp / tok.dp;
+  const acceptProb = Math.min(1, ratio);
+
+  // Mock vocabulary distributions (5 candidates)
+  const vocab = [tok.t,'next','said','the','it'];
+  const dProbs = [tok.dp, 0.18, 0.12, 0.10, 1-tok.dp-0.18-0.12-0.10];
+  const tProbs = [tok.tp, 0.15, 0.14, 0.12, 1-tok.tp-0.15-0.14-0.12];
+
+  const COL_W = W/2 - 20;
+  const BAR_MAX_W = COL_W - 120;
+  const BAR_H = 24, BAR_GAP = 8;
+  const LEFT_X = 20, RIGHT_X = W/2 + 20;
+
+  // Draft probabilities
+  ctx.fillStyle='#4a9eff'; ctx.font='bold 11px system-ui'; ctx.textAlign='left';
+  ctx.fillText('Draft model p_draft(x)', LEFT_X, 22);
+  dProbs.forEach((p,i)=>{
+    const y = 34 + i*(BAR_H+BAR_GAP);
+    const bw = BAR_MAX_W * p;
+    const isSelected = i===0;
+    ctx.fillStyle='#1a2e4a'; ctx.strokeStyle=isSelected?'#4a9eff':'#21262d'; ctx.lineWidth=isSelected?1.5:1;
+    ctx.beginPath(); ctx.roundRect(LEFT_X+80, y, BAR_MAX_W, BAR_H, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=isSelected?'#4a9eff':'#2a5080';
+    ctx.beginPath(); ctx.roundRect(LEFT_X+80, y, bw, BAR_H, 3); ctx.fill();
+    ctx.fillStyle=isSelected?'#c9d1d9':'#8b949e'; ctx.font=isSelected?'bold 10px system-ui':'10px system-ui'; ctx.textAlign='right';
+    ctx.fillText(`"${vocab[i]}"`, LEFT_X+76, y+BAR_H/2+4);
+    ctx.fillStyle='#c9d1d9'; ctx.font='10px monospace'; ctx.textAlign='left';
+    ctx.fillText(p.toFixed(3), LEFT_X+86+bw, y+BAR_H/2+4);
+    if(isSelected){ ctx.fillStyle='#4a9eff'; ctx.font='bold 9px system-ui'; ctx.textAlign='left'; ctx.fillText('← selected by draft', LEFT_X+86+bw+44, y+BAR_H/2+4); }
+  });
+
+  // Target probabilities
+  ctx.fillStyle='#ff9f43'; ctx.font='bold 11px system-ui'; ctx.textAlign='left';
+  ctx.fillText('Target model p_target(x)', RIGHT_X, 22);
+  tProbs.forEach((p,i)=>{
+    const y = 34 + i*(BAR_H+BAR_GAP);
+    const bw = BAR_MAX_W * p;
+    const isSelected = i===0;
+    ctx.fillStyle='#2a1e0f'; ctx.strokeStyle=isSelected?'#ff9f43':'#21262d'; ctx.lineWidth=isSelected?1.5:1;
+    ctx.beginPath(); ctx.roundRect(RIGHT_X+80, y, BAR_MAX_W, BAR_H, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=isSelected?'#ff9f43':'#503020';
+    ctx.beginPath(); ctx.roundRect(RIGHT_X+80, y, bw, BAR_H, 3); ctx.fill();
+    ctx.fillStyle=isSelected?'#c9d1d9':'#8b949e'; ctx.font=isSelected?'bold 10px system-ui':'10px system-ui'; ctx.textAlign='right';
+    ctx.fillText(`"${vocab[i]}"`, RIGHT_X+76, y+BAR_H/2+4);
+    ctx.fillStyle='#c9d1d9'; ctx.font='10px monospace'; ctx.textAlign='left';
+    ctx.fillText(p.toFixed(3), RIGHT_X+86+bw, y+BAR_H/2+4);
+  });
+
+  // Bottom: acceptance calculation
+  const calcY = H - 52;
+  ctx.fillStyle='#21262d'; ctx.beginPath(); ctx.roundRect(LEFT_X, calcY-8, W-LEFT_X*2, 50, 8); ctx.fill();
+  const verdict = accepted ? '#7ee787' : '#ff6584';
+  const verdictTxt = accepted ? '✓ ACCEPTED' : '✗ REJECTED';
+  ctx.fillStyle='#8b949e'; ctx.font='11px system-ui'; ctx.textAlign='center';
+  ctx.fillText(`Token "${tok.t}":  accept_prob = min(1, p_target / p_draft) = min(1, ${tok.tp.toFixed(3)} / ${tok.dp.toFixed(3)}) = min(1, ${ratio.toFixed(3)}) = ${acceptProb.toFixed(3)}`, W/2, calcY+10);
+  ctx.fillStyle=verdict; ctx.font='bold 13px system-ui'; ctx.textAlign='center';
+  ctx.fillText(`${verdictTxt}  (simulated draw u = ${accepted ? (acceptProb*0.72).toFixed(3) : (acceptProb*1.15).toFixed(3)} ${accepted ? '<' : '>'} ${acceptProb.toFixed(3)})`, W/2, calcY+32);
+}
+
+// ---- Speedup chart ----
+function sdDrawSpeedupChart() {
+  const c = document.getElementById('sd-speedup-canvas'); if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,W,H);
+
+  const γ_vals = [1,2,4,6,8];
+  const colors = ['#4a9eff','#7ee787','#ff9f43','#ff6584','#c9a9ff'];
+  const c_ = 0.10;
+  const alphas = Array.from({length:51},(_,i)=>0.50+i*0.01);
+  const maxSpeedup = 5;
+
+  const padL=52, padR=120, padT=20, padB=44;
+  const cW=W-padL-padR, cH=H-padT-padB;
+
+  // axes
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL,padT); ctx.lineTo(padL,padT+cH); ctx.lineTo(padL+cW,padT+cH); ctx.stroke();
+
+  // grid + y labels
+  [1,2,3,4,5].forEach(v=>{
+    const y=padT+cH*(1-v/maxSpeedup);
+    ctx.strokeStyle='#21262d'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+cW,y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px system-ui'; ctx.textAlign='right';
+    ctx.fillText(`${v}×`,padL-4,y+4);
+  });
+
+  // x labels
+  [0.5,0.6,0.7,0.8,0.9,1.0].forEach(a=>{
+    const x=padL+cW*(a-0.5)/0.5;
+    ctx.fillStyle='#8b949e'; ctx.font='10px system-ui'; ctx.textAlign='center';
+    ctx.fillText(a.toFixed(1),x,padT+cH+14);
+    ctx.strokeStyle='#21262d'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+cH); ctx.stroke();
+  });
+  ctx.fillStyle='#8b949e'; ctx.font='10px system-ui'; ctx.textAlign='center';
+  ctx.fillText('Acceptance rate α',padL+cW/2,padT+cH+32);
+
+  // Reference line at 1×
+  ctx.strokeStyle='#ffffff22'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  const yRef=padT+cH*(1-1/maxSpeedup);
+  ctx.beginPath(); ctx.moveTo(padL,yRef); ctx.lineTo(padL+cW,yRef); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#ffffff44'; ctx.font='9px system-ui'; ctx.textAlign='left';
+  ctx.fillText('1× (no speedup)',padL+4,yRef-4);
+
+  // Current α marker
+  const curAlpha = parseInt(document.getElementById('sd-alpha-slider').value)/100;
+  const markerX=padL+cW*(curAlpha-0.5)/0.5;
+  ctx.strokeStyle='#ffffff33'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(markerX,padT); ctx.lineTo(markerX,padT+cH); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Lines
+  γ_vals.forEach((γv,li)=>{
+    ctx.beginPath(); ctx.strokeStyle=colors[li]; ctx.lineWidth=2;
+    alphas.forEach((a,i)=>{
+      const speedup = (1-Math.pow(a,γv+1))/((1-a)*(γv*c_+1));
+      const x=padL+cW*(a-0.5)/0.5;
+      const y=padT+cH*(1-Math.min(speedup,maxSpeedup)/maxSpeedup);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    // Label at right
+    const lastA=alphas[alphas.length-1];
+    const lastS=(1-Math.pow(lastA,γv+1))/((1-lastA)*(γv*c_+1));
+    const lx=padL+cW+4;
+    const ly=padT+cH*(1-Math.min(lastS,maxSpeedup)/maxSpeedup);
+    ctx.fillStyle=colors[li]; ctx.font='bold 10px system-ui'; ctx.textAlign='left';
+    ctx.fillText(`γ=${γv}`,lx,ly+4);
+  });
+
+  // Dot at current (α, speedup) for each γ
+  const curGamma = parseInt(document.getElementById('sd-gamma-slider').value);
+  const curSpeedup = (1-Math.pow(curAlpha,curGamma+1))/((1-curAlpha)*(curGamma*c_+1));
+  const dotX=padL+cW*(curAlpha-0.5)/0.5;
+  const dotY=padT+cH*(1-Math.min(curSpeedup,maxSpeedup)/maxSpeedup);
+  ctx.beginPath(); ctx.arc(dotX,dotY,6,0,Math.PI*2);
+  ctx.fillStyle=colors[γ_vals.indexOf(curGamma)>=0?γ_vals.indexOf(curGamma):2]||'#fff'; ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
+
+  // Formula panel
+  const fp = document.getElementById('sd-speedup-formula');
+  if(fp) fp.innerHTML=`
+    <b style="color:#c9d1d9;">Speedup formula:</b>
+    <span style="font-family:monospace;color:#7ee787;">(1 − α<sup>γ+1</sup>) / ((1−α) × (γ·c + 1))</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    At α=${curAlpha.toFixed(2)}, γ=${curGamma}, c=${c_}:
+    <b style="color:#c9a9ff;">${curSpeedup.toFixed(3)}×</b> expected speedup
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <span style="color:#8b949e;">E[tokens accepted per round] =
+    (1−α<sup>γ</sup>)/(1−α) = <b style="color:#ff9f43;">${((1-Math.pow(curAlpha,curGamma))/(1-curAlpha)).toFixed(2)}</b></span>`;
+}
+
+// ============================================================
 // Initial draws
 drawDecisionBoundary(document.getElementById('boundaryCanvas'), weights, dataset, true);
 drawArchitecture(weights, null);
