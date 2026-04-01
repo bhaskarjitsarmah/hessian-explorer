@@ -632,6 +632,101 @@
 </head>
 <body>
 
+<!-- ===== PASSWORD GATE ===== -->
+<div id="pg-overlay" style="
+  position:fixed;inset:0;z-index:99999;
+  background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);
+  display:flex;align-items:center;justify-content:center;
+  font-family:system-ui,-apple-system,sans-serif;">
+  <div style="
+    background:#161b22;border:1px solid #30363d;border-radius:16px;
+    padding:48px 40px;max-width:420px;width:90%;text-align:center;
+    box-shadow:0 24px 80px #00000088;">
+
+    <!-- Lock icon -->
+    <div style="font-size:3rem;margin-bottom:16px;">🔒</div>
+
+    <!-- Title -->
+    <div style="font-size:1.4rem;font-weight:700;color:#c9d1d9;margin-bottom:8px;">
+      Visual Summary
+    </div>
+    <div style="font-size:0.85rem;color:#8b949e;margin-bottom:6px;">
+      Neural Network Compression — Interactive Explorer
+    </div>
+    <div style="font-size:0.8rem;color:#8b949e;margin-bottom:28px;line-height:1.6;">
+      This interactive tool is exclusive to <b style="color:#c9d1d9;">paid subscribers</b>.<br>
+      Enter the password from your subscriber email to unlock.
+    </div>
+
+    <!-- Input -->
+    <input id="pg-input" type="password" placeholder="Enter subscriber password"
+      onkeydown="if(event.key==='Enter')pgUnlock()"
+      style="
+        width:100%;padding:12px 16px;font-size:0.95rem;
+        background:#0d1117;color:#c9d1d9;
+        border:1px solid #30363d;border-radius:8px;
+        outline:none;margin-bottom:12px;
+        transition:border-color 0.2s;">
+
+    <!-- Error message -->
+    <div id="pg-error" style="
+      font-size:0.78rem;color:#f85149;
+      min-height:18px;margin-bottom:10px;"></div>
+
+    <!-- Unlock button -->
+    <button onclick="pgUnlock()" style="
+      width:100%;padding:12px;font-size:0.95rem;font-weight:600;
+      background:linear-gradient(135deg,#7c6fcd,#5a4fcf);
+      color:#fff;border:none;border-radius:8px;cursor:pointer;
+      transition:opacity 0.2s;">
+      Unlock →
+    </button>
+
+    <!-- Subscribe link -->
+    <div style="margin-top:20px;font-size:0.75rem;color:#8b949e;">
+      Not a subscriber yet?
+      <a href="https://visualsummary.substack.com" target="_blank"
+        style="color:#7c6fcd;text-decoration:none;">
+        Join Visual Summary →
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- Password gate ----
+// Change PG_PASSWORD to whatever you share with paid subscribers
+const PG_PASSWORD = 'visual2025';
+
+function pgUnlock() {
+  const val = document.getElementById('pg-input').value.trim();
+  const err = document.getElementById('pg-error');
+  if (val === PG_PASSWORD) {
+    sessionStorage.setItem('pg_unlocked', '1');
+    const overlay = document.getElementById('pg-overlay');
+    overlay.style.transition = 'opacity 0.4s';
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.remove(), 420);
+  } else {
+    err.textContent = 'Incorrect password. Check your subscriber email.';
+    const input = document.getElementById('pg-input');
+    input.style.borderColor = '#f85149';
+    setTimeout(() => { input.style.borderColor = '#30363d'; }, 1500);
+  }
+}
+
+// Stay unlocked for the session
+if (sessionStorage.getItem('pg_unlocked') === '1') {
+  document.getElementById('pg-overlay').remove();
+}
+
+// Focus input on load
+window.addEventListener('load', () => {
+  const el = document.getElementById('pg-input');
+  if (el) el.focus();
+});
+</script>
+
 <h1>Hessian-Based One-Shot Pruning</h1>
 <p class="subtitle">Train a neural network on the circle dataset, then compare magnitude vs Hessian-based (OBD) pruning</p>
 
